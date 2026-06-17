@@ -10,8 +10,9 @@ import { Plugin, SettingsTypes } from "@ryelite/core";
  * them, so every game-attached behaviour (right-click menus, player-name actions)
  * keeps working, and the chat input is never touched, so sending is unchanged.
  *
- * Everything below is layered onto that idea: drag-reorderable tabs, a fixed
- * (adjustable) chat height, a font-size override, and per-channel colours.
+ * Everything below is layered onto that idea: per-tab show/hide, drag-reorderable
+ * tabs, unread counts, a right-click "clear", a collapse toggle, and adjustable
+ * height / width / font / per-channel colours.
  */
 
 // ---------------------------------------------------------------------------
@@ -29,12 +30,42 @@ const CLASS_GLOBAL = "hs-text--orange";
 const CLASS_LOCAL = "hs-text--yellow";
 const CLASS_SYSTEM = "hs-text--white";
 const CLASS_PRIVATE = "hs-text--cyan"; // whispers: From / name / text all use this
+// System sub-types (all classify as "system"; split for per-type "show in All").
+const CLASS_DEATH = "hs-text--red"; // death messages ("X died") — assumed, verify in-game
+const CLASS_TRADE = "hs-text--magenta"; // incoming trade requests (purple)
 
 // The game's own message colours, hardcoded (verified against the live client) so
 // the plugin doesn't have to detect them. These are the picker defaults.
 const DEFAULT_GLOBAL_COLOR = "#ffb400"; // orange
 const DEFAULT_LOCAL_COLOR = "#ffff00"; // yellow
 const DEFAULT_PRIVATE_COLOR = "#00ffff"; // cyan
+
+// Curated font choices — we can't reliably enumerate the user's installed fonts,
+// so we offer common ones (bare family names; applyFont appends the game's own font
+// as the fallback so an absent font degrades to the normal chat font, not a generic).
+// "Default" = no override.
+const FONT_FAMILIES: Record<string, string> = {
+    Default: "",
+    "Sans-serif": "sans-serif",
+    Serif: "serif",
+    Monospace: "monospace",
+    Arial: "Arial",
+    Verdana: "Verdana",
+    Tahoma: "Tahoma",
+    "Trebuchet MS": "'Trebuchet MS'",
+    "Segoe UI": "'Segoe UI'",
+    Georgia: "Georgia",
+    "Times New Roman": "'Times New Roman'",
+    "Courier New": "'Courier New'",
+    Consolas: "Consolas",
+    "Comic Sans MS": "'Comic Sans MS'",
+    Impact: "Impact",
+    // Symbol/dingbat fonts — turn chat into glorious nonsense.
+    Wingdings: "Wingdings",
+    Webdings: "Webdings",
+    Symbol: "Symbol",
+};
+const FONT_OPTIONS = Object.keys(FONT_FAMILIES);
 
 // ---------------------------------------------------------------------------
 // Nodes / identifiers this plugin injects (all namespaced "chatplus-")
@@ -47,6 +78,10 @@ const TAB_MENU_ID = "chatplus-tab-menu";
 // Marks a message the user has "cleared" from a tab. A stylesheet rule hides it
 // with !important, so it stays hidden through re-filtering (only new lines appear).
 const CLEARED_CLASS = "chatplus-cleared";
+
+// Setting keys for the plain-text section labels (SettingsTypes.info rows restyled
+// into subtitles by injectStyle).
+const HEADER_KEYS = ["flashHeader", "showTabsHeader", "allInHeader", "customizeHeader"];
 
 // Pixels the pointer must travel before a press counts as a drag (vs a click).
 const DRAG_THRESHOLD = 5;
@@ -62,20 +97,20 @@ interface TabDef {
     label: string;
     /** The channel this tab flashes for (null = never flashes on its own). */
     channel: Channel | null;
+    /** Checkbox setting key that controls whether this tab is shown. */
+    showSetting: string;
 }
 
-// The always-present tabs. "All" shows everything; the rest filter to one channel.
+// Every tab is optional now — each is shown only when its "Show tabs" checkbox is
+// on. The Whispers (Private) tab also pulls whispers out of their normal spot and
+// is handled specially (see the Whispers section).
 const TABS: TabDef[] = [
-    { id: "all", label: "All", channel: null },
-    { id: "local", label: "Local", channel: "local" },
-    { id: "global", label: "Global", channel: "global" },
+    { id: "all", label: "All", channel: null, showSetting: "showAllTab" },
+    { id: "local", label: "Local", channel: "local", showSetting: "showLocalTab" },
+    { id: "global", label: "Global", channel: "global", showSetting: "showGlobalTab" },
+    { id: "system", label: "System", channel: "system", showSetting: "showSystemTab" },
+    { id: "private", label: "Whispers", channel: "private", showSetting: "showPrivateTab" },
 ];
-
-// Optional tabs, appended only when their setting is on (System with "show system
-// messages", Whispers with "put private in a tab"). Whispers come from a separate
-// list, so that tab is handled specially (see the Whispers section).
-const SYSTEM_TAB: TabDef = { id: "system", label: "System", channel: "system" };
-const PRIVATE_TAB: TabDef = { id: "private", label: "Whispers", channel: "private" };
 
 // Maps each colour-picker setting to the CSS variable that drives its override.
 const COLOR_BINDINGS = [
@@ -94,6 +129,8 @@ export default class ChatPlus extends Plugin {
 
     private tabbar: HTMLElement | null = null;
     private readonly tabButtons = new Map<TabId, HTMLElement>();
+    private collapseBtn: HTMLElement | null = null;
+    private collapsed = false;
 
     private listObserver: MutationObserver | null = null;
     private privateObserver: MutationObserver | null = null;
@@ -120,44 +157,137 @@ export default class ChatPlus extends Plugin {
     constructor() {
         super();
 
-        // Toggles
-        this.settings.flashOnUnread = {
-            text: "Flash tab on new message",
-            description:
-                "Highlight a tab when a message arrives on a channel you're not currently viewing.",
+        // "Flash tabs on:" — which channels light up their tab on a new message.
+        // (Each *Header is a plain-text section label: an info row restyled by injectStyle.)
+        this.settings.flashHeader = {
+            text: "Flash tabs on:",
+            type: SettingsTypes.info,
+            value: "Flash tabs on:",
+            callback: () => {},
+        };
+
+        this.settings.flashLocal = {
+            text: "Local",
             type: SettingsTypes.checkbox,
             value: true,
             callback: () => {},
         };
 
-        this.settings.showSystemInAll = {
-            text: "Show system messages in All",
+        this.settings.flashGlobal = {
+            text: "Global",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => {},
+        };
+
+        this.settings.flashSystem = {
+            text: "System",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => {},
+        };
+
+        this.settings.flashWhispers = {
+            text: "Whispers",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => {},
+        };
+
+        this.settings.flashLogin = {
+            text: "Login",
+            description: "Flash the Whispers tab for 'X Logged In/Out' notifications.",
+            type: SettingsTypes.checkbox,
+            value: false,
+            callback: () => {},
+        };
+
+        // "Show tabs:" — show or hide each tab individually.
+        this.settings.showTabsHeader = {
+            text: "Show tabs:",
+            type: SettingsTypes.info,
+            value: "Show tabs:",
+            callback: () => {},
+        };
+
+        this.settings.showAllTab = {
+            text: "All",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => this.onTabsChanged(),
+        };
+
+        this.settings.showLocalTab = {
+            text: "Local",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => this.onTabsChanged(),
+        };
+
+        this.settings.showGlobalTab = {
+            text: "Global",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => this.onTabsChanged(),
+        };
+
+        this.settings.showSystemTab = {
+            text: "System",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => this.onTabsChanged(),
+        };
+
+        this.settings.showPrivateTab = {
+            text: "Private",
             description:
-                "Include white system/server messages in the All tab. Turn this off (with the System tab on) to keep All clean while still getting them — and their notifications — in the System tab.",
+                "Show a Whispers tab for private messages (moves them out of their normal spot while on).",
+            type: SettingsTypes.checkbox,
+            value: false,
+            callback: () => this.onTabsChanged(),
+        };
+
+        // "System in 'All':" — which system sub-types appear in the All tab.
+        this.settings.allInHeader = {
+            text: "System in 'All':",
+            type: SettingsTypes.info,
+            value: "System in 'All':",
+            callback: () => {},
+        };
+
+        this.settings.showSystemInAll = {
+            text: "Status messages",
+            description:
+                "Include normal white status messages in the All tab. They always stay available in the System tab.",
             type: SettingsTypes.checkbox,
             value: true,
             callback: () => this.refilterIfActive(),
         };
 
-        this.settings.showSystemTab = {
-            text: "System tab",
-            description:
-                "Add a dedicated System tab for white system/server messages. When off, there's no System tab and no system notifications.",
+        this.settings.deathInAll = {
+            text: "Death messages",
+            description: "Include red death messages ('X died') in the All tab.",
             type: SettingsTypes.checkbox,
             value: true,
-            callback: () => this.onShowSystemTabChanged(),
+            callback: () => this.refilterIfActive(),
         };
 
-        this.settings.privateInTab = {
-            text: "Put private messages in a tab",
-            description:
-                "Add a Whispers tab for private messages and remove them from their normal spot. When off, private messages behave as the game shows them.",
+        this.settings.tradeInAll = {
+            text: "Trade messages",
+            description: "Include purple trade-request messages in the All tab.",
             type: SettingsTypes.checkbox,
-            value: false,
-            callback: () => this.onPrivateInTabChanged(),
+            value: true,
+            callback: () => this.refilterIfActive(),
         };
 
-        // Sliders
+        // "Customize" — size, font, and colours.
+        this.settings.customizeHeader = {
+            text: "Customize",
+            type: SettingsTypes.info,
+            value: "Customize",
+            callback: () => {},
+        };
+
         this.settings.chatHeight = {
             text: "Chat height (px)",
             description:
@@ -169,6 +299,16 @@ export default class ChatPlus extends Plugin {
             callback: () => this.applyHeight(),
         };
 
+        this.settings.chatWidth = {
+            text: "Chat width (px)",
+            description: "Width of the chat window.",
+            type: SettingsTypes.range,
+            value: 560,
+            min: 300,
+            max: 1200,
+            callback: () => this.applyWidth(),
+        };
+
         this.settings.fontSize = {
             text: "Font size (px)",
             description: "Size of the chat message text.",
@@ -176,6 +316,15 @@ export default class ChatPlus extends Plugin {
             value: 13,
             min: 9,
             max: 28,
+            callback: () => this.applyFont(),
+        };
+
+        this.settings.fontFamily = {
+            text: "Font",
+            description: "Font for chat text. 'Default' uses the game's font.",
+            type: SettingsTypes.combobox,
+            value: "Default",
+            options: FONT_OPTIONS,
             callback: () => this.applyFont(),
         };
 
@@ -260,6 +409,7 @@ export default class ChatPlus extends Plugin {
         const list = this.getList();
         if (!menu || !list) return;
 
+        this.collapsed = this.data?.collapsed === true;
         this.buildTabBar(menu);
         this.observeList(list);
         this.observePrivate();
@@ -267,6 +417,7 @@ export default class ChatPlus extends Plugin {
         this.applyFilter();
         this.updateListVisibility();
         this.applyHeight();
+        this.applyWidth();
         this.applyFont();
         this.applyColors();
         this.scrollToBottom();
@@ -294,8 +445,11 @@ export default class ChatPlus extends Plugin {
         // Drop our layout overrides from the menu.
         const menu = document.getElementById(CHAT_MENU_ID);
         menu?.classList.remove("chatplus-private");
+        menu?.classList.remove("chatplus-collapsed");
         menu?.style.removeProperty("--chatplus-h");
+        menu?.style.removeProperty("--chatplus-w");
         menu?.style.removeProperty("--chatplus-font");
+        menu?.style.removeProperty("--chatplus-font-family");
         menu?.style.removeProperty("--chatplus-menu-h");
 
         // Drop the colour overrides from the document root.
@@ -305,6 +459,7 @@ export default class ChatPlus extends Plugin {
         this.tabbar?.remove();
         this.tabbar = null;
         this.tabButtons.clear();
+        this.collapseBtn = null;
         this.unreadCounts.clear();
 
         this.dragBlocker?.remove();
@@ -320,6 +475,7 @@ export default class ChatPlus extends Plugin {
     private buildTabBar(menu: HTMLElement): void {
         document.getElementById(TABBAR_ID)?.remove();
         this.tabButtons.clear();
+        this.ensureActiveVisible();
 
         const bar = document.createElement("div");
         bar.id = TABBAR_ID;
@@ -343,17 +499,30 @@ export default class ChatPlus extends Plugin {
             bar.appendChild(btn);
         }
 
+        // Collapse/expand control, pinned to the far right of the bar.
+        const collapseBtn = document.createElement("button");
+        collapseBtn.className = "chatplus-collapse-btn";
+        this.bindClick(collapseBtn, () => this.toggleCollapse());
+        bar.appendChild(collapseBtn);
+        this.collapseBtn = collapseBtn;
+
         // Sit at the top of the chat panel.
         menu.insertBefore(bar, menu.firstChild);
         this.tabbar = bar;
+        this.applyCollapsed(); // set the rebuilt collapse button's arrow + state
     }
 
-    /** The tab set: the base tabs plus System / Whispers when their settings are on. */
+    /** The visible tab set — each tab shows only when its "Show tabs" toggle is on. */
     private allTabDefs(): TabDef[] {
-        const tabs = [...TABS];
-        if (this.showSystemTab()) tabs.push(SYSTEM_TAB);
-        if (this.privateInTab()) tabs.push(PRIVATE_TAB);
-        return tabs;
+        return TABS.filter((t) => this.settings[t.showSetting]?.value !== false);
+    }
+
+    /** If the active tab is hidden, fall back to the first visible one. */
+    private ensureActiveVisible(): void {
+        const tabs = this.allTabDefs();
+        if (tabs.length && !tabs.some((t) => t.id === this.activeTab)) {
+            this.activeTab = tabs[0].id;
+        }
     }
 
     /** Tabs in the user's saved order, with any new/unknown tabs appended. */
@@ -381,16 +550,33 @@ export default class ChatPlus extends Plugin {
         this.scrollToBottom();
     }
 
-    /** Rebuild the bar when the System tab is toggled on/off. */
-    private onShowSystemTabChanged(): void {
-        if (!this.showSystemTab() && this.activeTab === "system") this.activeTab = "all";
+    /** Rebuild the bar when the set of shown tabs changes. */
+    private onTabsChanged(): void {
         const menu = document.getElementById(CHAT_MENU_ID);
         if (!menu || !this.tabbar) return;
-        this.buildTabBar(menu);
-        this.clearUnread("system");
+        this.buildTabBar(menu); // ensures the active tab is still one that's visible
+        this.updateListVisibility();
         this.applyFilter();
         this.applyHeight();
         this.scrollToBottom();
+    }
+
+    private toggleCollapse(): void {
+        this.collapsed = !this.collapsed;
+        if (this.data) this.data.collapsed = this.collapsed;
+        this.applyCollapsed();
+        if (!this.collapsed) this.scrollToBottom();
+    }
+
+    /** Collapsed hides everything but the collapse button; the arrow points the way out. */
+    private applyCollapsed(): void {
+        document
+            .getElementById(CHAT_MENU_ID)
+            ?.classList.toggle("chatplus-collapsed", this.collapsed);
+        if (this.collapseBtn) {
+            this.collapseBtn.textContent = this.collapsed ? "▲" : "▼";
+            this.collapseBtn.title = this.collapsed ? "Expand chat" : "Collapse chat";
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -588,21 +774,9 @@ export default class ChatPlus extends Plugin {
     // the message area, show it only on the Whispers tab, and move it back when off.
     // ------------------------------------------------------------------------
 
+    /** Whether the Whispers (Private) tab is shown — also gates the whisper relocation. */
     private privateInTab(): boolean {
-        return this.settings.privateInTab?.value === true;
-    }
-
-    /** Rebuild the bar when the Whispers tab is toggled on/off. */
-    private onPrivateInTabChanged(): void {
-        if (!this.privateInTab() && this.activeTab === "private") this.activeTab = "all";
-        const menu = document.getElementById(CHAT_MENU_ID);
-        if (!menu || !this.tabbar) return;
-        this.buildTabBar(menu);
-        this.clearUnread("private");
-        this.updateListVisibility();
-        this.applyFilter();
-        this.applyHeight();
-        this.scrollToBottom();
+        return this.settings.showPrivateTab?.value === true;
     }
 
     /**
@@ -695,23 +869,38 @@ export default class ChatPlus extends Plugin {
     /**
      * Watch the separate private list so the Whispers tab can flash on a new
      * whisper (and auto-scroll while it's the active tab). Only acts when the
-     * "put private in a tab" setting is on.
+     * Private tab is enabled.
      */
     private observePrivate(): void {
         const pm = document.getElementById(PRIVATE_LIST_ID);
         if (!pm) return;
         this.privateObserver?.disconnect();
         this.privateObserver = new MutationObserver((records) => {
-            const added = records.some((rec) =>
-                Array.from(rec.addedNodes).some(
-                    (n) =>
-                        n instanceof HTMLElement &&
-                        (n.matches(MESSAGE_SELECTOR) || n.querySelector(MESSAGE_SELECTOR))
-                )
-            );
-            if (!added || !this.privateInTab()) return;
-            if (this.activeTab === "private") this.scrollToBottom();
-            else if (this.flashEnabled()) this.bumpUnread("private");
+            // Track whether any visible message was added (so the view follows when
+            // you're on the Whispers tab) and whether any of them should flash the
+            // tab (gated per the Whispers/Login flash settings). Login/logout lines
+            // are bare "X Logged In/Out" (no "From" prefix) and use the Login toggle.
+            let visibleAdded = false;
+            let notify = false;
+            for (const rec of records) {
+                rec.addedNodes.forEach((node) => {
+                    if (!(node instanceof HTMLElement)) return;
+                    const msgs = node.matches(MESSAGE_SELECTOR)
+                        ? [node]
+                        : Array.from(node.querySelectorAll<HTMLElement>(MESSAGE_SELECTOR));
+                    for (const m of msgs) {
+                        if (!this.isMessageVisible(m)) continue;
+                        visibleAdded = true;
+                        if (this.shouldNotify(m)) notify = true;
+                    }
+                });
+            }
+            if (!this.privateInTab()) return;
+            if (this.activeTab === "private") {
+                if (visibleAdded) this.scrollToBottom();
+            } else if (notify) {
+                this.bumpUnread("private");
+            }
         });
         this.privateObserver.observe(pm, { childList: true, subtree: true });
     }
@@ -719,12 +908,12 @@ export default class ChatPlus extends Plugin {
     /** Filter a freshly added line to the active tab, and flash its tab if hidden. */
     private onNewMessage(msg: HTMLElement): void {
         const channel = this.classify(msg);
-        const visibleHere = this.shouldShow(channel, this.activeTab);
+        const visibleHere = this.shouldShow(channel, this.activeTab, msg);
         msg.style.display = visibleHere ? "" : "none";
 
         // Flash the channel's own tab only when the message isn't already visible
-        // in the tab we're looking at.
-        if (this.flashEnabled() && !visibleHere) {
+        // in the tab we're looking at, and the channel's flash is enabled.
+        if (!visibleHere && this.flashesForChannel(channel)) {
             // Look up the channel's tab in the active set, so a hidden System tab
             // (system messages off) never gets an unread count.
             const tab = this.allTabDefs().find((t) => t.channel === channel);
@@ -736,7 +925,7 @@ export default class ChatPlus extends Plugin {
     private applyFilter(): void {
         for (const msg of this.messages()) {
             const channel = this.classify(msg);
-            msg.style.display = this.shouldShow(channel, this.activeTab) ? "" : "none";
+            msg.style.display = this.shouldShow(channel, this.activeTab, msg) ? "" : "none";
         }
     }
 
@@ -753,11 +942,29 @@ export default class ChatPlus extends Plugin {
     }
 
     /** Whether a line of `channel` should be visible on `tab`. */
-    private shouldShow(channel: Channel, tab: TabId): boolean {
-        // All shows everything except system when system messages are hidden.
-        if (tab === "all") return channel !== "system" || this.showSystemInAll();
+    private shouldShow(channel: Channel, tab: TabId, msg: HTMLElement): boolean {
+        // All shows everything except the system sub-types hidden from it.
+        if (tab === "all") {
+            if (channel !== "system") return true;
+            return this.systemKindShownInAll(this.systemKind(msg));
+        }
         // Local / Global / System each show only their own channel.
         return channel === tab;
+    }
+
+    /** Sub-categorise a system message by its colour. */
+    private systemKind(msg: HTMLElement): "status" | "death" | "trade" {
+        if (msg.querySelector(`.${CLASS_DEATH}`)) return "death";
+        if (msg.querySelector(`.${CLASS_TRADE}`)) return "trade";
+        return "status"; // white / anything else
+    }
+
+    private systemKindShownInAll(kind: "status" | "death" | "trade"): boolean {
+        switch (kind) {
+            case "death": return this.deathInAll();
+            case "trade": return this.tradeInAll();
+            default: return this.showSystemInAll();
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -787,7 +994,9 @@ export default class ChatPlus extends Plugin {
         if (this.activeTab === "all") {
             this.clearUnread("local");
             this.clearUnread("global");
-            if (this.showSystemInAll()) this.clearUnread("system");
+            // Only clear System unread if All actually shows every system sub-type;
+            // otherwise the System tab may hold messages you haven't seen.
+            if (this.systemFullyInAll()) this.clearUnread("system");
         }
     }
 
@@ -803,11 +1012,11 @@ export default class ChatPlus extends Plugin {
     }
 
     // ------------------------------------------------------------------------
-    // Layout: height & font
+    // Layout: height, width & font
     //
-    // Both are driven through CSS variables read by !important stylesheet rules, so
-    // the game's per-render inline styles can't override them. The variables are set
-    // on the menu and inherit down to the public/private lists.
+    // All driven through CSS variables read by !important stylesheet rules, so the
+    // game's per-render inline styles can't override them. The variables are set on
+    // the menu and inherit down to the public/private lists.
     // ------------------------------------------------------------------------
 
     /**
@@ -828,12 +1037,30 @@ export default class ChatPlus extends Plugin {
         this.scrollToBottom();
     }
 
-    /** Override the chat message font size. */
+    /** Override the chat window width. */
+    private applyWidth(): void {
+        const menu = document.getElementById(CHAT_MENU_ID);
+        if (!menu) return;
+        const w = Number(this.settings.chatWidth?.value) || 560;
+        menu.style.setProperty("--chatplus-w", `${w}px`);
+    }
+
+    /** Override the chat message font size and family. */
     private applyFont(): void {
         const menu = document.getElementById(CHAT_MENU_ID);
         if (!menu) return;
         const size = Number(this.settings.fontSize?.value) || 13;
         menu.style.setProperty("--chatplus-font", `${size}px`);
+
+        const family = FONT_FAMILIES[String(this.settings.fontFamily?.value ?? "Default")] ?? "";
+        if (family) {
+            // Fall back to the game's own chat font if the chosen font isn't installed.
+            // (Read from the menu, which we never override, so it stays the game font.)
+            const gameFont = getComputedStyle(menu).fontFamily || "sans-serif";
+            menu.style.setProperty("--chatplus-font-family", `${family}, ${gameFont}`);
+        } else {
+            menu.style.removeProperty("--chatplus-font-family"); // Default = game font
+        }
         this.scrollToBottom();
     }
 
@@ -875,6 +1102,27 @@ export default class ChatPlus extends Plugin {
         return list ? Array.from(list.querySelectorAll<HTMLElement>(MESSAGE_SELECTOR)) : [];
     }
 
+    /** Whether the game is actually showing this message (vs hiding it per a setting). */
+    private isMessageVisible(msg: HTMLElement): boolean {
+        const cs = getComputedStyle(msg);
+        return cs.display !== "none" && cs.visibility !== "hidden";
+    }
+
+    /**
+     * A bare "<name> Logged In/Out" notification rather than a real whisper. Real
+     * whispers start with a "From <name>:" prefix, so we require the line to NOT
+     * start with "From" to avoid suppressing a whisper that mentions logging in.
+     */
+    private isLoginLogoutMessage(msg: HTMLElement): boolean {
+        const text = (msg.textContent ?? "").trim();
+        return !/^from\b/i.test(text) && /\blogged (in|out)\b/i.test(text);
+    }
+
+    /** Whether a (visible) private-list message should light up the Whispers tab. */
+    private shouldNotify(msg: HTMLElement): boolean {
+        return this.isLoginLogoutMessage(msg) ? this.flashLogin() : this.flashesForChannel("private");
+    }
+
     /** Scroll whichever list the active tab is showing to the newest message. */
     private scrollToBottom(): void {
         const list =
@@ -884,16 +1132,35 @@ export default class ChatPlus extends Plugin {
         if (list) list.scrollTo(0, list.scrollHeight);
     }
 
-    private flashEnabled(): boolean {
-        return this.settings.flashOnUnread?.value !== false;
+    /** Whether new messages on this channel should flash their tab (per settings). */
+    private flashesForChannel(channel: Channel): boolean {
+        switch (channel) {
+            case "local": return this.settings.flashLocal?.value !== false;
+            case "global": return this.settings.flashGlobal?.value !== false;
+            case "system": return this.settings.flashSystem?.value !== false;
+            case "private": return this.settings.flashWhispers?.value !== false;
+        }
+    }
+
+    private flashLogin(): boolean {
+        return this.settings.flashLogin?.value === true;
     }
 
     private showSystemInAll(): boolean {
         return this.settings.showSystemInAll?.value !== false;
     }
 
-    private showSystemTab(): boolean {
-        return this.settings.showSystemTab?.value !== false;
+    private deathInAll(): boolean {
+        return this.settings.deathInAll?.value !== false;
+    }
+
+    private tradeInAll(): boolean {
+        return this.settings.tradeInAll?.value !== false;
+    }
+
+    /** True only when every system sub-type is shown in All. */
+    private systemFullyInAll(): boolean {
+        return this.showSystemInAll() && this.deathInAll() && this.tradeInAll();
     }
 
     /**
@@ -923,6 +1190,9 @@ export default class ChatPlus extends Plugin {
         if (document.getElementById(STYLE_ID)) return;
         const style = document.createElement("style");
         style.id = STYLE_ID;
+        // Build a combined selector across every section-label row.
+        const hdr = (suffix: string) =>
+            HEADER_KEYS.map((k) => `#highlite-settings-content-row-${k}${suffix}`).join(",\n");
         style.textContent = `
 /* Fixed-height message area (public, and private only while the feature is on). */
 #${PUBLIC_LIST_ID} {
@@ -935,10 +1205,12 @@ export default class ChatPlus extends Plugin {
     max-height: none !important;
     overflow-y: auto !important;
 }
-/* Grow the whole menu so the taller list doesn't squeeze the input. */
+/* Grow the whole menu so the taller list doesn't squeeze the input; width is
+   user-set (auto = the game's default). */
 #${CHAT_MENU_ID} {
     height: var(--chatplus-menu-h, auto) !important;
     max-height: none !important;
+    width: var(--chatplus-w, auto) !important;
 }
 /* Message font size. */
 #${PUBLIC_LIST_ID} .hs-chat-message-container,
@@ -946,6 +1218,7 @@ export default class ChatPlus extends Plugin {
 #${CHAT_MENU_ID}.chatplus-private #${PRIVATE_LIST_ID} .hs-chat-message-container,
 #${CHAT_MENU_ID}.chatplus-private #${PRIVATE_LIST_ID} .hs-chat-message-container * {
     font-size: var(--chatplus-font, 13px) !important;
+    font-family: var(--chatplus-font-family) !important;
     line-height: 1.25 !important;
 }
 /* Per-channel colours (unset variable = native game colour). */
@@ -1005,6 +1278,36 @@ export default class ChatPlus extends Plugin {
     0%, 100% { background: rgba(255, 211, 77, 0.10); }
     50%      { background: rgba(255, 211, 77, 0.32); }
 }
+/* Collapse/expand button — pinned to the far right of the bar. */
+#${TABBAR_ID} .chatplus-collapse-btn {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 3px 9px;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    color: #b8b8b8;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    cursor: pointer;
+    user-select: none;
+}
+#${TABBAR_ID} .chatplus-collapse-btn:hover {
+    color: #e6e6e6;
+    background: rgba(255, 255, 255, 0.08);
+}
+/* Collapsed: shrink the menu and hide everything but the collapse button. */
+#${CHAT_MENU_ID}.chatplus-collapsed {
+    height: auto !important;
+}
+#${CHAT_MENU_ID}.chatplus-collapsed #${PUBLIC_LIST_ID},
+#${CHAT_MENU_ID}.chatplus-collapsed #${PRIVATE_LIST_ID},
+#${CHAT_MENU_ID}.chatplus-collapsed #${INPUT_MENU_ID},
+#${CHAT_MENU_ID}.chatplus-collapsed .chatplus-tab {
+    display: none !important;
+}
 /* Right-click tab menu. */
 #${TAB_MENU_ID} {
     position: fixed;
@@ -1032,6 +1335,35 @@ export default class ChatPlus extends Plugin {
 }
 #${TAB_MENU_ID} .chatplus-menu-item:hover {
     background: rgba(255, 255, 255, 0.12);
+}
+/* Plain-text settings section labels — restyle the framework's info banner into
+   left-aligned subtitles (same trick as Quick Deposit). */
+${hdr("")} {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 10px 4px 2px 4px !important;
+    transition: none !important;
+}
+${hdr(" > div")} {
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    text-align: left !important;
+    gap: 0 !important;
+}
+${hdr(" > div > div:first-child")} {
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    color: #d0d0d0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: left !important;
+}
+${hdr(" > div > div:last-child")} {
+    display: none !important;
 }`;
         document.head.appendChild(style);
     }

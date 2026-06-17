@@ -1,6 +1,6 @@
 {
   "name": "ChatPlus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Chat+ — split chat into WoW-style tabs (All / Local / Global / Whispers) over the game's own chat, with unread flashing, resizable height, font size, and per-channel colours.",
   "packageManager": "yarn@4.9.1",
   "engines": {

@@ -1,32 +1,37 @@
 # Chat+
 
-A [RyeLite](https://github.com/ash-of-the-meadow/RyeliteDesktop) plugin that splits the game's combined chat into WoW-style tabs — **All / Local / Global** — so you can read just the channel you care about.
+A [RyeLite](https://github.com/ash-of-the-meadow/RyeliteDesktop) plugin that reorganises the game's combined chat into WoW-style tabs, so you can read just the channel you care about.
 
 ## What it does
 
-The game shows Local and Global chat in one combined list. This plugin adds a tab bar at the top of the chat panel:
+The game shows every channel in one combined list. Chat+ adds a tab bar at the top of the chat panel that filters it into separate tabs:
 
 | Tab | Shows |
 |---|---|
-| **All** | Local + Global (and system messages, unless you hide them — see settings) |
+| **All** | Everything — Local + Global, plus the system messages you choose to include |
 | **Local** | Local chat only (yellow) |
 | **Global** | Global chat only (orange) |
-| **System** | System/server messages only (white) |
+| **System** | System/server messages — status (white), death (red), trade (purple) |
+| **Whispers** | Private messages (optional; off by default) |
 
-When a message arrives on a channel you're **not** currently viewing, that tab flashes until you click it (WoW-style unread cue). This can be turned off in settings.
+Each tab can be shown or hidden, and you can **drag tabs to reorder** them (the order is remembered). A tab shows an **unread count** and flashes when a message arrives on a channel you're not viewing; the count clears when you open it.
 
-**Drag any tab to reorder it** (e.g. put Global before Local); the order is remembered. **Right-click a tab** for a *Clear all messages* option that hides that tab's current messages (client-side only — it can't touch the server's history; new messages still arrive). The chat area is a **fixed, adjustable height** so the tabs never jump around as you switch between them — set it with the *Chat height* slider.
+A few more touches:
 
-The plugin only changes which messages are **visible** — it reuses the game's real chat list underneath, so right-click menus on chat lines and everything else keep working. Your chat **input is never touched**: sending behaves exactly as the game does.
+- **Right-click a tab** → *Clear all messages* hides that tab's current messages (client-side only — it can't touch the server's history; new messages still arrive).
+- The **▼ button** at the far right of the tab bar collapses the whole chat out of the way (▲ to bring it back); the state is remembered.
+- Adjustable **height, width, font size, font, and per-channel text colours**.
+
+Chat+ only changes which messages are **visible** — it reuses the game's real chat nodes underneath, so right-click menus on chat lines and everything else keep working. Your chat **input is never touched**: sending behaves exactly as the game does.
 
 ### Settings
 
-- **Flash tab on new message** — highlight a tab when a message arrives on a channel you're not viewing (default on).
-- **Show system messages in All** — include white system/server messages in the All tab (default on). Turn this off, with the System tab on, to keep All clean while still getting system messages and their notifications in the System tab.
-- **System tab** — add a dedicated System tab for system/server messages (default on). When off, there's no System tab and no system notifications.
-- **Chat height (px)** — fixed height of the message area so the tabs don't jump (default 160).
+- **Flash tabs on:** — per-channel toggles for which tabs flash when a new message arrives while you're not viewing them: **Local**, **Global**, **System**, **Whispers** (all on by default), and **Login** for "X Logged In/Out" notifications (off by default).
+- **Show tabs:** — show/hide each tab individually: **All**, **Local**, **Global**, **System** (all on by default), and **Private** (off by default; turning it on adds the Whispers tab and moves whispers into it). Hiding the active tab switches you to the next visible one.
+- **System in 'All':** — per-type toggles for which system messages appear in the All tab: **Status** (white), **Death** (red "X died"), and **Trade** (purple trade requests) — all on by default. Untick any to keep it out of All while it still shows in the System tab.
+- **Chat height (px)** / **Chat width (px)** — size of the chat panel.
 - **Font size (px)** — size of the chat message text (default 13).
-- **Put private messages in a tab** — add a Whispers tab for private messages and pull them out of their normal spot (default off).
+- **Font** — choose the chat font from a list of common fonts (default is the game's font).
 - **Global / Local / Whisper text colour** — recolour each channel's messages. Defaults to the game's own colours.
 - **Reset colours to default** — restore the three colours to the game's defaults.
 
@@ -48,9 +53,9 @@ The bundled output ends up at `dist/ChatPlus.js`. To test it locally against a d
 ## How it works (briefly)
 
 1. On enable it waits for the chat UI to exist, then inserts a tab bar at the top of `#hs-chat-menu`.
-2. Each message in `#hs-public-message-list__container` is classified by its colour class — orange = Global, yellow = Local, white = system.
-3. Switching tabs toggles each message's `display`; the real nodes are never cloned or removed, so game handlers survive.
-4. A `MutationObserver` catches new messages, filters them to the active tab, auto-scrolls, and flashes the relevant tab if you're looking elsewhere.
+2. Public messages in `#hs-public-message-list__container` are classified by colour class — orange = Global, yellow = Local, and white/red/magenta = system sub-types (status/death/trade). Whispers come from the separate `#hs-private-message-list`.
+3. Switching tabs toggles each message's `display`; the real nodes are never cloned or removed, so the game's own handlers survive. The Whispers list is temporarily relocated into the chat menu while its tab is enabled.
+4. A `MutationObserver` filters new messages to the active tab, updates per-tab unread counts, and flashes tabs you're not currently viewing.
 
 ## License
 
