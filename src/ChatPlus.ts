@@ -31,7 +31,7 @@ const CLASS_LOCAL = "hs-text--yellow";
 const CLASS_SYSTEM = "hs-text--white";
 const CLASS_PRIVATE = "hs-text--cyan"; // whispers: From / name / text all use this
 // System sub-types (all classify as "system"; split for per-type "show in All").
-const CLASS_DEATH = "hs-text--red"; // death messages ("X died") — assumed, verify in-game
+const CLASS_DEATH = "hs-text--red"; // death messages ("X died")
 const CLASS_TRADE = "hs-text--magenta"; // incoming trade requests (purple)
 
 // The game's own message colours, hardcoded (verified against the live client) so
