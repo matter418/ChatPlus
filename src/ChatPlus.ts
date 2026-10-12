@@ -2,7 +2,7 @@ import { Plugin, SettingsTypes } from "@ryelite/core";
 import { ALERT_SOUNDS, playAlertSound, disposeAlertSounds } from "./alertSounds";
 
 /*
- * Chat+ — a RyeLite plugin that reorganises the game's chat into WoW-style tabs.
+ * Chat+ — a Highspell+ plugin that reorganises the game's chat into WoW-style tabs.
  *
  * The game keeps a single combined "public" message list and tells channels apart
  * only by a colour class on each line (orange = global, yellow = local, white =

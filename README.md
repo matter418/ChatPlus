@@ -1,6 +1,6 @@
 # Chat+
 
-A [RyeLite](https://github.com/ash-of-the-meadow/RyeliteDesktop) plugin that reorganises the game's combined chat into WoW-style tabs, so you can read just the channel you care about.
+A Highspell+ plugin that reorganises the game's combined chat into WoW-style tabs, so you can read just the channel you care about.
 
 ## What it does
 
@@ -30,7 +30,7 @@ Chat+ only changes which messages are **visible** — it reuses the game's real 
 - **Show tabs:** — show/hide each tab individually: **All**, **Local**, **Global**, **System** (all on by default), and **Private** (off by default; turning it on adds the Private tab and moves private messages into it). Hiding the active tab switches you to the next visible one.
 - **System in 'All':** — per-type toggles for which system messages appear in the All tab: **Status** (white), **Death** (red "X died"), and **Trade** (purple trade requests) — all on by default. Untick any to keep it out of All while it still shows in the System tab.
 - **Filters:** — **Ignored players** and **Blocked words** each open a chip editor (type, press Enter to add; click a chip to remove). Ignored players are treated like the game's own block list (it hooks the same check the client uses), so their public chat, whispers **and** overhead text all disappear; messages containing a blocked word/phrase (whole-word, case-insensitive) are hidden entirely and never flash a tab. An uncapped ignore list on top of the game's 50-slot one.
-- **Alert words** — a third chip editor: when a new message contains one of these (whole-word, case-insensitive) you hear a ding and the line is highlighted — add your own name to get pinged. Your own messages never ding. **Alert sound** picks the tone from the client's shared list (Ding, Chime, Bell, Blip, Knock or the Idle Alert plugin's sound — changing it plays a preview), **Alert volume (%)** sets the loudness (0 = silent, highlight only) and **Test alert sound** plays it.
+- **Alert words** — a third chip editor: when a new message contains one of these (whole-word, case-insensitive) you hear a ding and the line is highlighted — add your own name to get pinged. Your own messages never ding. **Alert sound** picks the tone (Ding, Chime, Bell, Blip, Knock, or the Idle Alert plugin's sound — changing it plays a preview), **Alert volume (%)** sets the loudness (0 = silent, highlight only) and **Test alert sound** plays it.
 - **Chat window:** — **Hide chat** collapses the chat to just the tab bar (kept in sync with the ▼/▲ arrow), and **Show collapse arrow** (on by default) shows or hides the arrow itself.
 - **Chat height (px)** / **Chat width (px)** — size of the chat panel.
 - **Font size (px)** — size of the chat message text (default 13).
@@ -41,7 +41,7 @@ Chat+ only changes which messages are **visible** — it reuses the game's real 
 
 ## Installation
 
-The intended way to install is through RyeLite's built-in plugin hub once the plugin is published there. Open RyeLite, go to the plugins menu, find **Chat+**, and enable it.
+The intended way to install is through the Highspell+ plugin hub. Open Highspell+, go to the plugins menu, find **Chat+**, and enable it.
 
 ## Building from source
 
@@ -52,7 +52,7 @@ yarn install
 yarn build
 ```
 
-The bundled output ends up at `dist/ChatPlus.js`. To test it locally against a development copy of RyeLite, copy that file into `RyeliteDesktop/src/renderer/client/plugins/` and launch the client with `yarn dev`.
+The bundled output ends up at `dist/ChatPlus.js`. To test it locally against a development copy of Highspell+, copy that file into the client's `src/renderer/client/plugins/` and launch the client with `yarn dev`.
 
 ## How it works (briefly)
 
