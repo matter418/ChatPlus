@@ -1,6 +1,6 @@
 # Chat+
 
-A Highspell+ plugin that reorganises the game's combined chat into WoW-style tabs, so you can read just the channel you care about.
+A [Highspell+](https://github.com/matter418/HighSpellPlus) plugin that reorganises the game's combined chat into WoW-style tabs, so you can read just the channel you care about.
 
 ## What it does
 
