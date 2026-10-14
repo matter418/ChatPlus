@@ -19,6 +19,7 @@ Each tab can be shown or hidden, and you can **drag tabs to reorder** them (the 
 A few more touches:
 
 - **Right-click a tab** → *Clear all messages* hides that tab's current messages (client-side only — it can't touch the server's history; new messages still arrive).
+- **Right-click a player's name** in chat → the game's own menu (*Message / Add / Block*) gains a **Lookup** entry that opens that player's [HighSpell hiscores](https://highspell.com/hiscores) page in your browser.
 - The **▼ arrow** in the tab bar (right after the tabs by default — drag it to put it wherever you like among them) collapses the whole chat out of the way (▲ to bring it back). The state is remembered, and you can do the same from the **Hide chat** setting. Don't want the arrow at all? Turn off **Show collapse arrow**.
 - Adjustable **height, width, font size, font, and per-channel text colours**.
 
@@ -60,6 +61,7 @@ The bundled output ends up at `dist/ChatPlus.js`. To test it locally against a d
 2. Public messages in `#hs-public-message-list__container` are classified by colour class — orange = Global, yellow = Local, and white/red/magenta = system sub-types (status/death/trade). Private messages come from the separate `#hs-private-message-list`.
 3. Switching tabs toggles each message's `display`; the real nodes are never cloned or removed, so the game's own handlers survive. The private-message list is temporarily relocated into the chat menu while its tab is enabled.
 4. A `MutationObserver` filters new messages to the active tab, updates per-tab unread counts, and flashes tabs you're not currently viewing.
+5. The **Lookup** entry wraps the game's `ContextMenuController.createDefaultContextMenu`: when the menu being built is a chat name menu (it has a *Message &lt;name&gt;* entry), a *Lookup &lt;name&gt;* action of the game's own action class is appended, so it looks and behaves like the built-in entries. Clicking it calls `window.open("https://highspell.com/hiscores/player/<name>", "_blank")`, which Highspell+ routes to your default browser.
 
 ## License
 
