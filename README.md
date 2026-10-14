@@ -19,7 +19,7 @@ Each tab can be shown or hidden, and you can **drag tabs to reorder** them (the 
 A few more touches:
 
 - **Right-click a tab** → *Clear all messages* hides that tab's current messages (client-side only — it can't touch the server's history; new messages still arrive).
-- **Right-click a player's name** in chat → the game's own menu (*Message / Add / Block*) gains a **Lookup** entry that opens that player's [HighSpell hiscores](https://highspell.com/hiscores) page in your browser.
+- **Right-click a player's name** in chat → the game's own menu (*Message / Add / Block*) gains a **Lookup** entry that opens that player's [HighSpell hiscores](https://highspell.com/hiscores) page in your browser. Turn it off with **Lookup in name menu** if you don't want it.
 - The **▼ arrow** in the tab bar (right after the tabs by default — drag it to put it wherever you like among them) collapses the whole chat out of the way (▲ to bring it back). The state is remembered, and you can do the same from the **Hide chat** setting. Don't want the arrow at all? Turn off **Show collapse arrow**.
 - Adjustable **height, width, font size, font, and per-channel text colours**.
 
@@ -32,7 +32,7 @@ Chat+ only changes which messages are **visible** — it reuses the game's real 
 - **System in 'All':** — per-type toggles for which system messages appear in the All tab: **Status** (white), **Death** (red "X died"), and **Trade** (purple trade requests) — all on by default. Untick any to keep it out of All while it still shows in the System tab.
 - **Filters:** — **Ignored players** and **Blocked words** each open a chip editor (type, press Enter to add; click a chip to remove). Ignored players are treated like the game's own block list (it hooks the same check the client uses), so their public chat, whispers **and** overhead text all disappear; messages containing a blocked word/phrase (whole-word, case-insensitive) are hidden entirely and never flash a tab. An uncapped ignore list on top of the game's 50-slot one.
 - **Alert words** — a third chip editor: when a new message contains one of these (whole-word, case-insensitive) you hear a ding and the line is highlighted — add your own name to get pinged. Your own messages never ding. **Alert sound** picks the tone (Ding, Chime, Bell, Blip, Knock, or the Idle Alert plugin's sound — changing it plays a preview), **Alert volume (%)** sets the loudness (0 = silent, highlight only) and **Test alert sound** plays it.
-- **Chat window:** — **Hide chat** collapses the chat to just the tab bar (kept in sync with the ▼/▲ arrow), and **Show collapse arrow** (on by default) shows or hides the arrow itself.
+- **Chat window:** — **Hide chat** collapses the chat to just the tab bar (kept in sync with the ▼/▲ arrow), **Show collapse arrow** (on by default) shows or hides the arrow itself, and **Lookup in name menu** (on by default) adds or removes the Lookup entry in the right-click menu on player names.
 - **Chat height (px)** / **Chat width (px)** — size of the chat panel.
 - **Font size (px)** — size of the chat message text (default 13).
 - **Font** — choose the chat font from a list of common fonts (default is the game's font).

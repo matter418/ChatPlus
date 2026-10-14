@@ -447,6 +447,15 @@ export default class ChatPlus extends Plugin {
             callback: () => this.applyCollapseBtnVisibility(),
         };
 
+        this.settings.lookupInMenu = {
+            text: "Lookup in name menu",
+            description:
+                "Add a 'Lookup' entry to the menu you get by right-clicking a player's name in chat. It opens their HighSpell hiscores page in your browser.",
+            type: SettingsTypes.checkbox,
+            value: true,
+            callback: () => {},
+        };
+
         // "Customize" — size, font, and colours.
         this.settings.customizeHeader = {
             text: "Customize",
@@ -1658,6 +1667,7 @@ export default class ChatPlus extends Plugin {
 
     /** If `actions` is a chat name menu, push a "Lookup <name>" action onto it (in place). */
     private appendLookupAction(actions: unknown): void {
+        if (this.settings.lookupInMenu?.value === false) return;
         if (!Array.isArray(actions) || actions.length === 0) return;
         // The game's own "Message <Name>" entry identifies a chat name menu and
         // tells us the player's display capitalisation.
